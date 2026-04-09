@@ -44,3 +44,5 @@ created.append(lec)
 ```
 
 Figuring out that you needed to use [this API](https://developerdocs.instructure.com/services/canvas/resources/lti_resource_links) to find the `lookup_uuid` was the hardest part of this. Happy to help anyone adapt the script to their courses! I've also attached an example of the output in `examples/webcast_pages.csv`.
+
+Feel free to reach out to `sampoder@` for help and support with these scripts.
