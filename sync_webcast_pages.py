@@ -1,4 +1,6 @@
 """
+Designed for CS70; feel free to adapt this to your course!
+
 Ensure every lecture webcast in webcasts.csv has a corresponding Canvas page
 with an embedded Kaltura player.
 
