@@ -10,8 +10,10 @@ Env vars:
 
 import argparse
 import csv
+import datetime
 import os
 import re
+import zoneinfo
 
 import requests
 from bs4 import BeautifulSoup
@@ -64,6 +66,29 @@ def complete_lti_flow(launch_url):
     return session
 
 
+def extract_entry_dates(html):
+    """Extract entry_id -> date mapping from DateRenderer JS in page HTML.
+
+    The page contains JS like:
+        entry_id/1_abc12345/...
+        ...
+        date: 1775596728,
+    We match each entry_id to its nearest following unix timestamp.
+    """
+    tz = zoneinfo.ZoneInfo("America/Los_Angeles")
+    dates = {}
+    for m in re.finditer(
+        r"entry_id/([01]_[a-z0-9]+).*?date:\s*(\d{10})", html, re.DOTALL
+    ):
+        entry_id = m.group(1)
+        if entry_id in dates:
+            continue
+        ts = int(m.group(2))
+        dt = datetime.datetime.fromtimestamp(ts, tz=tz)
+        dates[entry_id] = f"{dt.month}/{dt.day}"
+    return dates
+
+
 def scrape_channel(session, channel_path):
     """Paginate through a Kaltura channel gallery and extract entries."""
     all_results = []
@@ -73,7 +98,11 @@ def scrape_channel(session, channel_path):
     while True:
         url = f"https://kaf.berkeley.edu{channel_path}/page/{page}"
         resp = session.get(url, timeout=30)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = resp.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract dates from JS in this page
+        entry_dates = extract_entry_dates(html)
 
         items = soup.select("li.galleryItem")
         new_count = 0
@@ -91,6 +120,7 @@ def scrape_channel(session, channel_path):
             new_count += 1
             all_results.append({
                 "title": title,
+                "date": entry_dates.get(entry_id, ""),
                 "url": f"https://kaf.berkeley.edu/media/t/{entry_id}/{channel_path.split('/')[-1]}",
             })
 
@@ -98,7 +128,15 @@ def scrape_channel(session, channel_path):
             break
         page += 1
 
-    return all_results
+    # Deduplicate by URL
+    seen_urls = set()
+    deduped = []
+    for entry in all_results:
+        if entry["url"] not in seen_urls:
+            seen_urls.add(entry["url"])
+            deduped.append(entry)
+
+    return deduped
 
 
 def main():
@@ -127,11 +165,11 @@ def main():
     print(f"Found {len(results)} entries.")
 
     for r in results:
-        print(f"  {r['title']}")
+        print(f"  {r['date']:6s} {r['title']}")
 
     output = os.path.abspath(args.output)
     with open(output, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["title", "url"])
+        writer = csv.DictWriter(f, fieldnames=["title", "date", "url"])
         writer.writeheader()
         writer.writerows(results)
 
